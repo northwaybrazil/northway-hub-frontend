@@ -44,7 +44,13 @@ npm install
 cp .env.example .env
 ```
 
-3. Run locally:
+3. For local backend integration, set `VITE_API_URL` in an ignored local file such as `.env.development.local`:
+
+```bash
+echo "VITE_API_URL=http://localhost:8000" > .env.development.local
+```
+
+4. Run locally:
 
 ```bash
 npm run dev
@@ -52,7 +58,7 @@ npm run dev
 
 ## Environment Variables
 
-- `VITE_API_URL`: API base URL, example `http://localhost:3000`
+- `VITE_API_URL`: API base URL, example `http://localhost:8000`
 
 When this variable is empty, frontend requests use relative paths (same origin).
 
@@ -96,6 +102,16 @@ Implemented endpoints:
 - `DELETE /api/agent-management/agents/{id}`
 - `GET /api/knowledge/files?agentId={agentId}`
 - `POST /api/knowledge/uploads`
+
+## Render Deployment
+
+This project can be deployed as a Render `Static Site`.
+
+- Production should leave `VITE_API_URL` unset so the frontend calls same-origin `/api/*`.
+- `render.yaml` rewrites `/api/*` to `https://northway-hub-api.onrender.com/api/*`.
+- All other routes rewrite to `/index.html` for SPA navigation.
+
+If the backend Render hostname changes, update the destination URL in `render.yaml`.
 
 ## Payload Notes
 

@@ -1,5 +1,6 @@
 import { FormEvent, useCallback, useEffect, useState } from 'react';
 import { AgentTabs, type AgentTab } from '@components/agent-management/AgentTabs';
+import { AgentsSettingsView } from '@components/agent-management/AgentsSettingsView';
 import { AgentsSidebar } from '@components/agent-management/AgentsSidebar';
 import { GeralTab } from '@components/agent-management/GeralTab';
 import { InteligenciaTab } from '@components/agent-management/InteligenciaTab';
@@ -11,20 +12,28 @@ import type {
   AuthSession,
   CreateAgentPayload,
   EditableAgent,
+  EditableSessionPolicyRoute,
   KnowledgeFile,
-  PatchAgentPayload
+  PatchAgentPayload,
+  SessionPolicy,
+  SessionPolicyRoutingRule
 } from './types';
 
 const SESSION_STORAGE_KEY = 'agent_management_session';
 const DEFAULT_CHATWOOT_URL = 'https://app.chatwoot.com';
 const LOCAL_DEV_TOKEN_TYPE = 'LOCAL_DEV_FAKE';
 const LOCAL_DEV_COMPANY_ID = 'local-dev-company';
-const IS_LOCAL_DEV_MODE = import.meta.env.DEV;
+const isTruthyEnvValue = (value: string | undefined): boolean =>
+  ['1', 'true', 'yes', 'on'].includes((value ?? '').trim().toLowerCase());
+const IS_LOCAL_DEV_MODE =
+  import.meta.env.DEV && !isTruthyEnvValue(import.meta.env.VITE_DISABLE_LOCAL_MOCK as string | undefined);
 
 type LoginFormState = {
   email: string;
   password: string;
 };
+
+type AppView = 'agents' | 'settings-agents';
 
 const TOKEN_ERROR_CODES = [
   'AUTH_TOKEN_EXPIRED',
@@ -65,6 +74,193 @@ const createEmptyAgent = (): EditableAgent => ({
   metadata: {},
   metadata_knowledge_base: ''
 });
+
+const createEmptySessionPolicyRoute = (): EditableSessionPolicyRoute => ({
+  id: crypto.randomUUID(),
+  classification: '',
+  agent_id: ''
+});
+
+const createEmptySessionPolicy = (): SessionPolicy => ({
+  triage: {
+    allowed_classifications: []
+  },
+  routing_rules: [],
+  default_initial_agent_id: null
+});
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  Boolean(value && typeof value === 'object' && !Array.isArray(value));
+
+const isTriageAgentRoutingRule = (rule: SessionPolicyRoutingRule): boolean => {
+  const context = isRecord(rule.when?.context) ? rule.when?.context : null;
+
+  return (
+    rule.when?.status === 'TRIAGING' &&
+    typeof context?.issue_classification === 'string' &&
+    rule.target?.type === 'AGENT'
+  );
+};
+
+const buildReasonLabel = (classification: string): string =>
+  `${classification
+    .trim()
+    .replace(/[_-]+/g, ' ')
+    .replace(/\s+/g, ' ')} specialist`;
+
+const buildReasonCode = (classification: string): string =>
+  `${classification
+    .trim()
+    .replace(/[^a-zA-Z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .replace(/_+/g, '_')
+    .toUpperCase()}_SPECIALIST`;
+
+const extractTriageRoutes = (sessionPolicy: SessionPolicy | null): EditableSessionPolicyRoute[] => {
+  const routingRules = sessionPolicy?.routing_rules ?? [];
+  const triageRoutes = routingRules
+    .filter(isTriageAgentRoutingRule)
+    .map((rule) => {
+      const context = isRecord(rule.when?.context) ? rule.when?.context : {};
+      return {
+        id: crypto.randomUUID(),
+        classification: String(context.issue_classification ?? ''),
+        agent_id: typeof rule.target?.agent_id === 'string' ? rule.target.agent_id : ''
+      };
+    });
+
+  if (triageRoutes.length > 0) {
+    return triageRoutes;
+  }
+
+  const allowedClassifications = sessionPolicy?.triage?.allowed_classifications ?? [];
+  if (allowedClassifications.length > 0) {
+    return allowedClassifications.map((classification) => ({
+      id: crypto.randomUUID(),
+      classification,
+      agent_id: ''
+    }));
+  }
+
+  return [createEmptySessionPolicyRoute()];
+};
+
+const readDefaultInitialAgentId = (sessionPolicy: SessionPolicy | null): string => {
+  if (!sessionPolicy) {
+    return '';
+  }
+
+  const directCandidates = [
+    sessionPolicy.default_initial_agent_id,
+    sessionPolicy.default_agent_id,
+    sessionPolicy.initial_agent_id
+  ];
+
+  for (const candidate of directCandidates) {
+    if (typeof candidate === 'string' && candidate.trim()) {
+      return candidate;
+    }
+  }
+
+  if (
+    sessionPolicy.default_target?.type === 'AGENT' &&
+    typeof sessionPolicy.default_target.agent_id === 'string'
+  ) {
+    return sessionPolicy.default_target.agent_id;
+  }
+
+  return '';
+};
+
+const writeDefaultInitialAgentId = (sessionPolicy: SessionPolicy, agentId: string | null): SessionPolicy => {
+  const normalizedAgentId = agentId?.trim() ? agentId.trim() : null;
+
+  if ('default_agent_id' in sessionPolicy) {
+    return {
+      ...sessionPolicy,
+      default_agent_id: normalizedAgentId
+    };
+  }
+
+  if ('initial_agent_id' in sessionPolicy) {
+    return {
+      ...sessionPolicy,
+      initial_agent_id: normalizedAgentId
+    };
+  }
+
+  if ('default_target' in sessionPolicy && isRecord(sessionPolicy.default_target)) {
+    return {
+      ...sessionPolicy,
+      default_target: normalizedAgentId
+        ? {
+            ...sessionPolicy.default_target,
+            type: 'AGENT',
+            agent_id: normalizedAgentId
+          }
+        : {
+            ...sessionPolicy.default_target,
+            agent_id: null
+          }
+    };
+  }
+
+  return {
+    ...sessionPolicy,
+    default_initial_agent_id: normalizedAgentId
+  };
+};
+
+const buildSessionPolicyPayload = (
+  sourcePolicy: SessionPolicy,
+  routes: EditableSessionPolicyRoute[],
+  defaultInitialAgentId: string
+): SessionPolicy => {
+  const normalizedRoutes = routes.map((route) => ({
+    classification: route.classification.trim(),
+    agent_id: route.agent_id.trim()
+  }));
+
+  const hasIncompleteRoute = normalizedRoutes.some(
+    (route) =>
+      (route.classification && !route.agent_id) || (!route.classification && Boolean(route.agent_id))
+  );
+
+  if (hasIncompleteRoute) {
+    throw new Error('Preencha classificacao e agente em todas as linhas de triagem.');
+  }
+
+  const completedRoutes = normalizedRoutes.filter((route) => route.classification && route.agent_id);
+  const preservedRules = (sourcePolicy.routing_rules ?? []).filter((rule) => !isTriageAgentRoutingRule(rule));
+  const allowedClassifications = Array.from(new Set(completedRoutes.map((route) => route.classification)));
+
+  const nextPolicy: SessionPolicy = {
+    ...sourcePolicy,
+    triage: {
+      ...(sourcePolicy.triage ?? {}),
+      allowed_classifications: allowedClassifications
+    },
+    routing_rules: [
+      ...preservedRules,
+      ...completedRoutes.map((route) => ({
+        when: {
+          status: 'TRIAGING',
+          context: {
+            issue_classification: route.classification
+          }
+        },
+        target: {
+          type: 'AGENT',
+          agent_id: route.agent_id
+        },
+        reason: buildReasonLabel(route.classification),
+        reason_code: buildReasonCode(route.classification)
+      }))
+    ]
+  };
+
+  return writeDefaultInitialAgentId(nextPolicy, defaultInitialAgentId);
+};
 
 const mapApiAgentToEditable = (agent: ApiAgent): EditableAgent => {
   const metadata = agent.metadata ?? {};
@@ -295,11 +491,18 @@ function App() {
 
   const [agents, setAgents] = useState<ApiAgent[]>([]);
   const [knowledgeFiles, setKnowledgeFiles] = useState<KnowledgeFile[]>([]);
+  const [activeView, setActiveView] = useState<AppView>('agents');
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
   const [editableAgent, setEditableAgent] = useState<EditableAgent>(() => createEmptyAgent());
+  const [sessionPolicySource, setSessionPolicySource] = useState<SessionPolicy>(() => createEmptySessionPolicy());
+  const [sessionPolicyRoutes, setSessionPolicyRoutes] = useState<EditableSessionPolicyRoute[]>(() => [
+    createEmptySessionPolicyRoute()
+  ]);
+  const [defaultInitialAgentId, setDefaultInitialAgentId] = useState('');
 
   const [activeTab, setActiveTab] = useState<AgentTab>('geral');
   const [isLoadingAgents, setIsLoadingAgents] = useState(false);
+  const [isLoadingSessionPolicy, setIsLoadingSessionPolicy] = useState(false);
   const [isLoadingKnowledgeFiles, setIsLoadingKnowledgeFiles] = useState(false);
   const [isUploadingKnowledgeFiles, setIsUploadingKnowledgeFiles] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -309,8 +512,12 @@ function App() {
   const clearWorkspaceState = useCallback((): void => {
     setAgents([]);
     setKnowledgeFiles([]);
+    setActiveView('agents');
     setSelectedAgentId(null);
     setEditableAgent(createEmptyAgent());
+    setSessionPolicySource(createEmptySessionPolicy());
+    setSessionPolicyRoutes([createEmptySessionPolicyRoute()]);
+    setDefaultInitialAgentId('');
     setActiveTab('geral');
     setStatusMessage(null);
     setErrorMessage(null);
@@ -398,16 +605,25 @@ function App() {
     [handleTokenAuthError, session]
   );
 
+  const applySessionPolicyToEditor = useCallback((policy: SessionPolicy | null): void => {
+    const nextPolicy = policy ?? createEmptySessionPolicy();
+    setSessionPolicySource(nextPolicy);
+    setSessionPolicyRoutes(extractTriageRoutes(nextPolicy));
+    setDefaultInitialAgentId(readDefaultInitialAgentId(nextPolicy));
+  }, []);
+
   useEffect(() => {
     if (!session) {
       return;
     }
     if (isLocalDevSession(session)) {
       setIsLoadingAgents(false);
+      setIsLoadingSessionPolicy(false);
       setErrorMessage(null);
       setAgents([]);
       setSelectedAgentId(null);
       setEditableAgent(createEmptyAgent());
+      applySessionPolicyToEditor(createEmptySessionPolicy());
       return;
     }
 
@@ -439,7 +655,37 @@ function App() {
     };
 
     void loadAgents();
-  }, [handleTokenAuthError, session]);
+  }, [applySessionPolicyToEditor, handleTokenAuthError, session]);
+
+  useEffect(() => {
+    if (!session) {
+      return;
+    }
+
+    if (isLocalDevSession(session)) {
+      return;
+    }
+
+    const loadSessionPolicy = async (): Promise<void> => {
+      setIsLoadingSessionPolicy(true);
+
+      try {
+        const response = await api.getCompanySessionPolicy(session.access_token);
+        applySessionPolicyToEditor(response.session_policy);
+      } catch (error) {
+        if (handleTokenAuthError(error)) {
+          return;
+        }
+
+        const message = error instanceof Error ? error.message : 'Falha ao carregar configuracoes.';
+        setErrorMessage(message);
+      } finally {
+        setIsLoadingSessionPolicy(false);
+      }
+    };
+
+    void loadSessionPolicy();
+  }, [applySessionPolicyToEditor, handleTokenAuthError, session]);
 
   useEffect(() => {
     if (!session || !editableAgent.id) {
@@ -462,6 +708,7 @@ function App() {
     }
 
     clearMessages();
+    setActiveView('agents');
     setKnowledgeFiles([]);
     setSelectedAgentId(target.id);
     setEditableAgent(mapApiAgentToEditable(target));
@@ -470,10 +717,34 @@ function App() {
 
   const handleNewAgent = (): void => {
     clearMessages();
+    setActiveView('agents');
     setKnowledgeFiles([]);
     setSelectedAgentId(null);
     setEditableAgent(createEmptyAgent());
     setActiveTab('geral');
+  };
+
+  const handleOpenAgentsSettings = (): void => {
+    clearMessages();
+    setActiveView('settings-agents');
+  };
+
+  const handleAddSessionPolicyRoute = (): void => {
+    setSessionPolicyRoutes((current) => [...current, createEmptySessionPolicyRoute()]);
+  };
+
+  const handleRemoveSessionPolicyRoute = (routeId: string): void => {
+    setSessionPolicyRoutes((current) => current.filter((route) => route.id !== routeId));
+  };
+
+  const handleSessionPolicyRouteChange = (
+    routeId: string,
+    field: keyof Pick<EditableSessionPolicyRoute, 'classification' | 'agent_id'>,
+    value: string
+  ): void => {
+    setSessionPolicyRoutes((current) =>
+      current.map((route) => (route.id === routeId ? { ...route, [field]: value } : route))
+    );
   };
 
   const handleLoginSubmit = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
@@ -651,6 +922,42 @@ function App() {
     }
   };
 
+  const handleSaveSessionPolicy = async (): Promise<void> => {
+    if (!session) {
+      return;
+    }
+
+    clearMessages();
+    setIsSaving(true);
+
+    try {
+      const payload = buildSessionPolicyPayload(
+        sessionPolicySource,
+        sessionPolicyRoutes,
+        defaultInitialAgentId
+      );
+
+      if (isLocalDevSession(session)) {
+        applySessionPolicyToEditor(payload);
+        setStatusMessage('Configuracoes atualizadas localmente (modo desenvolvimento).');
+        return;
+      }
+
+      const response = await api.putCompanySessionPolicy(session.access_token, payload);
+      applySessionPolicyToEditor(response.session_policy ?? payload);
+      setStatusMessage('Configuracoes de agentes salvas com sucesso.');
+    } catch (error) {
+      if (handleTokenAuthError(error)) {
+        return;
+      }
+
+      const message = error instanceof Error ? error.message : 'Falha ao salvar configuracoes.';
+      setErrorMessage(message);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   const handleRefreshKnowledgeFiles = async (): Promise<void> => {
     if (!editableAgent.id) {
       setKnowledgeFiles([]);
@@ -809,49 +1116,74 @@ function App() {
           session={session}
           isLoadingAgents={isLoadingAgents}
           agents={agents}
+          activeView={activeView}
           selectedAgentId={selectedAgentId}
           onSelectAgent={handleSelectAgent}
           onNewAgent={handleNewAgent}
+          onOpenAgentsSettings={handleOpenAgentsSettings}
           onLogout={handleLogout}
         />
 
         <main className="content">
           <header className="content-header">
-            <h1>Gerenciamento de Agentes</h1>
-            <p>{editableAgent.id ? `agent_id: ${editableAgent.id}` : 'Novo agente não salvo'}</p>
+            <h1>{activeView === 'agents' ? 'Gerenciamento de Agentes' : 'Configuracoes de Agentes'}</h1>
+            <p>
+              {activeView === 'agents'
+                ? editableAgent.id
+                  ? `agent_id: ${editableAgent.id}`
+                  : 'Novo agente nao salvo'
+                : 'Classificacoes de triagem e roteamento inicial da jornada'}
+            </p>
           </header>
-
-          <AgentTabs activeTab={activeTab} onTabChange={setActiveTab} />
 
           {statusMessage ? <p className="message success">{statusMessage}</p> : null}
           {errorMessage ? <p className="message error">{errorMessage}</p> : null}
 
-          {activeTab === 'geral' ? (
-            <GeralTab
-              editableAgent={editableAgent}
-              setEditableAgent={setEditableAgent}
-              isSaving={isSaving}
-              onSave={handleSaveGeral}
-              onDelete={handleDeleteAgent}
-              defaultChatwootUrl={DEFAULT_CHATWOOT_URL}
-            />
-          ) : null}
+          {activeView === 'agents' ? (
+            <>
+              <AgentTabs activeTab={activeTab} onTabChange={setActiveTab} />
 
-          {activeTab === 'inteligencia' ? (
-            <InteligenciaTab
-              editableAgent={editableAgent}
-              setEditableAgent={setEditableAgent}
-              knowledgeFiles={knowledgeFiles}
-              isLoadingKnowledgeFiles={isLoadingKnowledgeFiles}
-              isUploadingKnowledgeFiles={isUploadingKnowledgeFiles}
-              isSaving={isSaving}
-              onRefreshKnowledgeFiles={handleRefreshKnowledgeFiles}
-              onUploadKnowledgeFiles={handleUploadKnowledgeFiles}
-              onSave={handleSaveIntelligence}
-            />
-          ) : null}
+              {activeTab === 'geral' ? (
+                <GeralTab
+                  editableAgent={editableAgent}
+                  setEditableAgent={setEditableAgent}
+                  isSaving={isSaving}
+                  onSave={handleSaveGeral}
+                  onDelete={handleDeleteAgent}
+                  defaultChatwootUrl={DEFAULT_CHATWOOT_URL}
+                />
+              ) : null}
 
-          {activeTab === 'monitoramento' ? <MonitoramentoTab editableAgent={editableAgent} /> : null}
+              {activeTab === 'inteligencia' ? (
+                <InteligenciaTab
+                  editableAgent={editableAgent}
+                  setEditableAgent={setEditableAgent}
+                  knowledgeFiles={knowledgeFiles}
+                  isLoadingKnowledgeFiles={isLoadingKnowledgeFiles}
+                  isUploadingKnowledgeFiles={isUploadingKnowledgeFiles}
+                  isSaving={isSaving}
+                  onRefreshKnowledgeFiles={handleRefreshKnowledgeFiles}
+                  onUploadKnowledgeFiles={handleUploadKnowledgeFiles}
+                  onSave={handleSaveIntelligence}
+                />
+              ) : null}
+
+              {activeTab === 'monitoramento' ? <MonitoramentoTab editableAgent={editableAgent} /> : null}
+            </>
+          ) : (
+            <AgentsSettingsView
+              agents={agents}
+              routes={sessionPolicyRoutes}
+              defaultInitialAgentId={defaultInitialAgentId}
+              isLoading={isLoadingSessionPolicy}
+              isSaving={isSaving}
+              onAddRoute={handleAddSessionPolicyRoute}
+              onRemoveRoute={handleRemoveSessionPolicyRoute}
+              onRouteChange={handleSessionPolicyRouteChange}
+              onDefaultInitialAgentChange={setDefaultInitialAgentId}
+              onSave={handleSaveSessionPolicy}
+            />
+          )}
         </main>
       </div>
 

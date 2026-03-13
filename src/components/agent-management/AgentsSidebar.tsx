@@ -4,9 +4,11 @@ interface AgentsSidebarProps {
   session: AuthSession;
   isLoadingAgents: boolean;
   agents: ApiAgent[];
+  activeView: 'agents' | 'settings-agents';
   selectedAgentId: string | null;
   onSelectAgent: (agentId: string) => void;
   onNewAgent: () => void;
+  onOpenAgentsSettings: () => void;
   onLogout: () => void;
 }
 
@@ -14,9 +16,11 @@ export function AgentsSidebar({
   session,
   isLoadingAgents,
   agents,
+  activeView,
   selectedAgentId,
   onSelectAgent,
   onNewAgent,
+  onOpenAgentsSettings,
   onLogout
 }: AgentsSidebarProps) {
   return (
@@ -28,29 +32,50 @@ export function AgentsSidebar({
           </span>
           <span>Northway Hub</span>
         </div>
-        <button className="sidebar-add-button" type="button" onClick={onNewAgent}>
-          Novo agente
-        </button>
       </div>
 
       <div className="sidebar-body">
-        {isLoadingAgents ? <p className="sidebar-state">Carregando agentes...</p> : null}
+        <section className="sidebar-section">
+          <div className="sidebar-section-header">
+            <p className="sidebar-section-title">Agentes</p>
+            <button className="sidebar-add-button" type="button" onClick={onNewAgent}>
+              Novo
+            </button>
+          </div>
 
-        {!isLoadingAgents && agents.length === 0 ? (
-          <p className="sidebar-state">Nenhum agente encontrado.</p>
-        ) : null}
+          {isLoadingAgents ? <p className="sidebar-state">Carregando agentes...</p> : null}
 
-        {agents.map((agent) => (
+          {!isLoadingAgents && agents.length === 0 ? (
+            <p className="sidebar-state">Nenhum agente encontrado.</p>
+          ) : null}
+
+          {agents.map((agent) => (
+            <button
+              key={agent.id}
+              type="button"
+              className={
+                activeView === 'agents' && selectedAgentId === agent.id
+                  ? 'agent-item selected'
+                  : 'agent-item'
+              }
+              onClick={() => onSelectAgent(agent.id)}
+            >
+              <span className="agent-name">{agent.name || agent.id}</span>
+              <span className="agent-kind">{agent.kind}</span>
+            </button>
+          ))}
+        </section>
+
+        <section className="sidebar-section">
+          <p className="sidebar-section-title">Configuracoes</p>
           <button
-            key={agent.id}
             type="button"
-            className={selectedAgentId === agent.id ? 'agent-item selected' : 'agent-item'}
-            onClick={() => onSelectAgent(agent.id)}
+            className={activeView === 'settings-agents' ? 'sidebar-nav-item selected' : 'sidebar-nav-item'}
+            onClick={onOpenAgentsSettings}
           >
-            <span className="agent-name">{agent.name || agent.id}</span>
-            <span className="agent-kind">{agent.kind}</span>
+            Agentes
           </button>
-        ))}
+        </section>
       </div>
 
       <div className="sidebar-footer">

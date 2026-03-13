@@ -1,10 +1,12 @@
 import type {
   ApiAgent,
   AuthSession,
+  CompanySessionPolicyResponse,
   CreateAgentPayload,
   KnowledgeFile,
   LoginPayload,
-  PatchAgentPayload
+  PatchAgentPayload,
+  SessionPolicy
 } from './types';
 
 const API_BASE_URL = (import.meta.env.VITE_API_URL as string | undefined)?.replace(/\/+$/, '') || '';
@@ -155,6 +157,25 @@ const normalizeKnowledgeFilesResponse = (payload: unknown): KnowledgeFile[] => {
   return [];
 };
 
+const normalizeCompanySessionPolicyResponse = (payload: unknown): CompanySessionPolicyResponse => {
+  if (payload && typeof payload === 'object') {
+    const value = payload as Record<string, unknown>;
+    const sessionPolicy =
+      value.session_policy && typeof value.session_policy === 'object'
+        ? (value.session_policy as SessionPolicy)
+        : null;
+
+    return {
+      company_id: typeof value.company_id === 'string' ? value.company_id : undefined,
+      session_policy: sessionPolicy
+    };
+  }
+
+  return {
+    session_policy: null
+  };
+};
+
 const request = async <T>(
   path: string,
   init: RequestInit = {},
@@ -222,6 +243,15 @@ export const api = {
     return normalizeKnowledgeFilesResponse(payload);
   },
 
+  getCompanySessionPolicy: async (accessToken: string) => {
+    const payload = await request<unknown>(
+      '/api/multi-tenancy/company/session-policy',
+      { method: 'GET' },
+      accessToken
+    );
+    return normalizeCompanySessionPolicyResponse(payload);
+  },
+
   uploadKnowledgeFile: (
     accessToken: string,
     payload: {
@@ -282,5 +312,19 @@ export const api = {
         method: 'DELETE'
       },
       accessToken
-    )
+    ),
+
+  putCompanySessionPolicy: async (accessToken: string, sessionPolicy: SessionPolicy) => {
+    const payload = await request<unknown>(
+      '/api/multi-tenancy/company/session-policy',
+      {
+        method: 'PUT',
+        body: JSON.stringify({
+          session_policy: sessionPolicy
+        })
+      },
+      accessToken
+    );
+    return normalizeCompanySessionPolicyResponse(payload);
+  }
 };

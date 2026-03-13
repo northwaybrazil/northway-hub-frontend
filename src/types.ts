@@ -119,6 +119,50 @@ export interface EditableAgent {
   metadata_knowledge_base: string;
 }
 
+export interface SessionPolicyRoutingWhen {
+  status?: string;
+  context?: Record<string, unknown>;
+  [key: string]: unknown;
+}
+
+export interface SessionPolicyRoutingTarget {
+  type?: string;
+  agent_id?: string | null;
+  [key: string]: unknown;
+}
+
+export interface SessionPolicyRoutingRule {
+  when?: SessionPolicyRoutingWhen;
+  target?: SessionPolicyRoutingTarget;
+  reason?: string;
+  reason_code?: string;
+  [key: string]: unknown;
+}
+
+export interface SessionPolicy {
+  triage?: {
+    allowed_classifications?: string[];
+    [key: string]: unknown;
+  };
+  routing_rules?: SessionPolicyRoutingRule[];
+  default_initial_agent_id?: string | null;
+  default_agent_id?: string | null;
+  initial_agent_id?: string | null;
+  default_target?: SessionPolicyRoutingTarget;
+  [key: string]: unknown;
+}
+
+export interface CompanySessionPolicyResponse {
+  company_id?: string;
+  session_policy: SessionPolicy | null;
+}
+
+export interface EditableSessionPolicyRoute {
+  id: string;
+  classification: string;
+  agent_id: string;
+}
+
 export type KnowledgeFileStatus =
   | 'uploaded'
   | 'pending_binding'

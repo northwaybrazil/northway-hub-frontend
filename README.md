@@ -50,7 +50,13 @@ cp .env.example .env
 echo "VITE_API_URL=http://localhost:8000" > .env.development.local
 ```
 
-4. Run locally:
+4. To run `npm run dev` without the local fake login/mock flow, also disable it in the same file:
+
+```bash
+echo "VITE_DISABLE_LOCAL_MOCK=true" >> .env.development.local
+```
+
+5. Run locally:
 
 ```bash
 npm run dev
@@ -59,6 +65,7 @@ npm run dev
 ## Environment Variables
 
 - `VITE_API_URL`: API base URL, example `http://localhost:8000`
+- `VITE_DISABLE_LOCAL_MOCK`: disables fake login/mock behavior in Vite dev mode when set to `true`
 
 When this variable is empty, frontend requests use relative paths (same origin).
 
@@ -70,7 +77,7 @@ When this variable is empty, frontend requests use relative paths (same origin).
 
 ## Local Fake Login (Dev Only)
 
-To unblock frontend development without infrastructure, local fake login is enabled automatically in **Vite dev mode** (`import.meta.env.DEV`).
+To unblock frontend development without infrastructure, local fake login is enabled automatically in **Vite dev mode** (`import.meta.env.DEV`) unless `VITE_DISABLE_LOCAL_MOCK=true`.
 
 ### How it works
 
@@ -79,6 +86,25 @@ To unblock frontend development without infrastructure, local fake login is enab
 - The session is marked with token type `LOCAL_DEV_FAKE`.
 - The app skips backend reads for agents/knowledge files in this mode.
 - Agent create/update/delete actions run locally in memory so UI flows can be tested.
+
+### How to disable fake mode in local dev
+
+Create or update `.env.development.local`:
+
+```bash
+cat <<'EOF' > .env.development.local
+VITE_API_URL=http://localhost:8000
+VITE_DISABLE_LOCAL_MOCK=true
+EOF
+```
+
+Then run:
+
+```bash
+npm run dev
+```
+
+With that flag enabled, dev mode uses real backend auth and API calls.
 
 ### Limitations in fake mode
 

@@ -86,7 +86,7 @@ const createEmptySessionPolicy = (): SessionPolicy => ({
     allowed_classifications: []
   },
   routing_rules: [],
-  default_initial_agent_id: null
+  initial_agent_id: null
 });
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -151,9 +151,9 @@ const readDefaultInitialAgentId = (sessionPolicy: SessionPolicy | null): string 
   }
 
   const directCandidates = [
-    sessionPolicy.default_initial_agent_id,
+    sessionPolicy.initial_agent_id,
     sessionPolicy.default_agent_id,
-    sessionPolicy.initial_agent_id
+    sessionPolicy.default_initial_agent_id
   ];
 
   for (const candidate of directCandidates) {
@@ -175,17 +175,18 @@ const readDefaultInitialAgentId = (sessionPolicy: SessionPolicy | null): string 
 const writeDefaultInitialAgentId = (sessionPolicy: SessionPolicy, agentId: string | null): SessionPolicy => {
   const normalizedAgentId = agentId?.trim() ? agentId.trim() : null;
 
+  if ('initial_agent_id' in sessionPolicy || 'default_initial_agent_id' in sessionPolicy) {
+    const { default_initial_agent_id: _legacyInitialAgentId, ...nextPolicy } = sessionPolicy;
+    return {
+      ...nextPolicy,
+      initial_agent_id: normalizedAgentId
+    };
+  }
+
   if ('default_agent_id' in sessionPolicy) {
     return {
       ...sessionPolicy,
       default_agent_id: normalizedAgentId
-    };
-  }
-
-  if ('initial_agent_id' in sessionPolicy) {
-    return {
-      ...sessionPolicy,
-      initial_agent_id: normalizedAgentId
     };
   }
 
@@ -207,7 +208,7 @@ const writeDefaultInitialAgentId = (sessionPolicy: SessionPolicy, agentId: strin
 
   return {
     ...sessionPolicy,
-    default_initial_agent_id: normalizedAgentId
+    initial_agent_id: normalizedAgentId
   };
 };
 

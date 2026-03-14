@@ -1,5 +1,5 @@
 export type AgentKind = 'CONVERSATIONAL' | 'REPORT_GENERATOR';
-export type AgentUseCase = 'SDR' | 'SUPPORT';
+export type AgentUseCase = 'SDR' | 'SUPPORT' | 'TRIAGE';
 
 export interface LoginPayload {
   email: string;

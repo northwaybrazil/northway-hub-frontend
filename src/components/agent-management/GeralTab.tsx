@@ -119,6 +119,7 @@ export function GeralTab({
               >
                 <option value="SDR">SDR</option>
                 <option value="SUPPORT">SUPPORT</option>
+                <option value="TRIAGE">TRIAGE</option>
               </select>
             </div>
           ) : null}

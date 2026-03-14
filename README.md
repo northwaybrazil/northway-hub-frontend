@@ -10,7 +10,7 @@ This app provides a management console to:
 - List, create, update, and delete agents.
 - Configure:
   - `kind`: `CONVERSATIONAL` or `REPORT_GENERATOR`
-  - `use_case` (only when `kind=CONVERSATIONAL`): `SDR` or `SUPPORT`
+  - `use_case` (only when `kind=CONVERSATIONAL`): `SDR`, `SUPPORT`, or `TRIAGE`
   - Handoff and cooldown settings
   - Chatwoot integration fields
 - Configure intelligence settings:

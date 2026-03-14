@@ -670,7 +670,10 @@ function App() {
       setIsLoadingSessionPolicy(true);
 
       try {
-        const response = await api.getCompanySessionPolicy(session.access_token);
+        const response = await api.getCompanySessionPolicy(
+          session.access_token,
+          session.tenant.id
+        );
         applySessionPolicyToEditor(response.session_policy);
       } catch (error) {
         if (handleTokenAuthError(error)) {

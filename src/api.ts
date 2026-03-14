@@ -243,9 +243,9 @@ export const api = {
     return normalizeKnowledgeFilesResponse(payload);
   },
 
-  getCompanySessionPolicy: async (accessToken: string) => {
+  getCompanySessionPolicy: async (accessToken: string, companyId: string) => {
     const payload = await request<unknown>(
-      '/api/multi-tenancy/company/session-policy',
+      `/api/multi-tenancy/companies/${encodeURIComponent(companyId)}`,
       { method: 'GET' },
       accessToken
     );

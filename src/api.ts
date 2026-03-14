@@ -314,11 +314,15 @@ export const api = {
       accessToken
     ),
 
-  putCompanySessionPolicy: async (accessToken: string, sessionPolicy: SessionPolicy) => {
+  patchCompanySessionPolicy: async (
+    accessToken: string,
+    companyId: string,
+    sessionPolicy: SessionPolicy
+  ) => {
     const payload = await request<unknown>(
-      '/api/multi-tenancy/company/session-policy',
+      `/api/multi-tenancy/companies/${encodeURIComponent(companyId)}`,
       {
-        method: 'PUT',
+        method: 'PATCH',
         body: JSON.stringify({
           session_policy: sessionPolicy
         })

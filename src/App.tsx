@@ -943,7 +943,11 @@ function App() {
         return;
       }
 
-      const response = await api.putCompanySessionPolicy(session.access_token, payload);
+      const response = await api.patchCompanySessionPolicy(
+        session.access_token,
+        session.tenant.id,
+        payload
+      );
       applySessionPolicyToEditor(response.session_policy ?? payload);
       setStatusMessage('Configuracoes de agentes salvas com sucesso.');
     } catch (error) {
